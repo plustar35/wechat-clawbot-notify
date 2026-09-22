@@ -15,7 +15,7 @@ AI 助手 → ClawBot iLink API → 微信 ClawBot → 你的微信
 3. **发送消息**：使用缓存的 token，通过 `/ilink/bot/sendmessage` 接口发送消息到你的微信
 4. **自动重试**：发送失败时自动刷新 token 并重试一次
 
-配置读取会优先使用新的 WorkBuddy 配置文件位置（macOS/Linux: `~/.workbuddy/settings.json`，Windows: `%USERPROFILE%\.workbuddy\settings.json`），再回退到旧版应用配置目录。
+配置读取会优先使用新的 WorkBuddy 配置文件位置（macOS/Linux: `~/.workbuddy/settings.json`，Windows: `%USERPROFILE%\.workbuddy\settings.json`），再回退到旧版应用配置目录。WorkBuddy 5.5 起 ClawBot 配置改为按用户存放在 `claw.users.<用户ID>.channels.weixinClawBot`，v1.3.0 起脚本同时兼容新旧两种结构，并优先读取新结构。
 
 ## 前置条件
 
@@ -27,11 +27,21 @@ AI 助手 → ClawBot iLink API → 微信 ClawBot → 你的微信
 
 ### 第一步：安装 Skill
 
-将本项目克隆到你的 Skill 目录下：
+将本项目克隆到 WorkBuddy 的 Skill 目录下（WorkBuddy 从 `~/.workbuddy/skills/` 加载技能）：
+
+macOS / Linux:
 
 ```bash
-git clone https://github.com/plustar35/wechat-clawbot-notify.git ~/.claude/skills/wechat-clawbot-notify
+git clone https://github.com/plustar35/wechat-clawbot-notify.git ~/.workbuddy/skills/wechat-clawbot-notify
 ```
+
+Windows PowerShell:
+
+```powershell
+git clone https://github.com/plustar35/wechat-clawbot-notify.git "$env:USERPROFILE\.workbuddy\skills\wechat-clawbot-notify"
+```
+
+已安装过的用户升级：进入上述目录执行 `git pull`，然后运行 `status` 检查。
 
 ### 第二步：初始化配置
 
@@ -108,7 +118,9 @@ python scripts/send_wechat.py status
 | 提示 "No messages with context_token found" | 打开微信给 ClawBot 发一条消息，然后执行 `refresh` |
 | 消息发送失败                                    | 执行 `refresh` 获取新的 token 后重试        |
 | 提示 "HTTP 401"                             | 检查 WorkBuddy 设置中的 botToken 是否正确    |
-| 提示 "Cannot read WorkBuddy settings"       | 确认已安装 WorkBuddy 且配置文件存在            |
+| 提示 "Cannot read WorkBuddy settings"       | 确认已安装 WorkBuddy 且配置文件存在。WorkBuddy 找配置目录的规则是：环境变量 `WORKBUDDY_CONFIG_DIR` 优先，否则用用户主目录下的 `.workbuddy`（Windows 即 `C:\Users\<用户名>\.workbuddy`），脚本按同样规则查找 |
+| `status` 里的 Bot ID 和 WorkBuddy 设置里的不一致，`refresh` 一直找不到消息 | 脚本读到了旧配置文件，升级到 v1.3.0 以上 |
+| 提示 "Token: Cached for a different bot"   | WorkBuddy 重新绑定过 ClawBot，给 ClawBot 发一条消息后执行 `refresh` |
 
 
 ## 项目结构

@@ -3,11 +3,11 @@ name: wechat-clawbot-notify
 description: "Send notification messages to the user's WeChat via ClawBot (iLink API). Use when automation tasks complete and need to notify the user, or when the user asks to send a message to their WeChat. Triggers on: 'notify me on WeChat', 'send to my WeChat', 'push result to WeChat', '发微信通知', '推送到微信', '通知我'."
 description_zh: "通过微信 ClawBot 发送通知消息给用户"
 description_en: "Send notification messages to user's WeChat via ClawBot"
-version: 1.2.0
+version: 1.3.0
 allowed-tools: Bash,Read
 compatibility: macOS / Windows / Linux. Requires Python 3. Reads config from WorkBuddy settings.json.
 metadata:
-  version: "1.2.0"
+  version: "1.3.0"
   openclaw:
     emoji: "\U0001F4AC"
     requires:
@@ -136,10 +136,12 @@ python "$env:SKILL_DIR\scripts\send_wechat.py" refresh
 | "getupdates returned ret=-14" | 旧缓存 cursor 或旧 ClawBot 配置失效；脚本会自动丢弃 cursor 重试。仍失败时，让用户给 ClawBot 再发一条消息后执行 `refresh` |
 | 发送静默失败 | 执行 `refresh` 获取新的 token |
 | "HTTP 401" | 检查 WorkBuddy 设置中的 botToken |
+| "Token: Cached for a different bot" | WorkBuddy 重新绑定过 ClawBot，缓存的 token 属于旧 bot。让用户给 ClawBot 发一条消息后执行 `refresh` |
+| `status` 里的 Bot ID 与 WorkBuddy 设置中当前 ClawBot 不一致 | 脚本读到了旧配置文件。升级到 v1.3.0 以上（已适配 WorkBuddy 5.5 的按用户存放的配置结构） |
 
 ## 工作原理
 
-1. **配置**：从 WorkBuddy settings 读取 `claw.channels.weixinClawBot`（botToken、userId、baseUrl）
+1. **配置**：从 WorkBuddy settings 读取 weixinClawBot 通道配置（botToken、userId、baseUrl）。WorkBuddy 5.5 起配置位于 `claw.users.<用户ID>.channels.weixinClawBot`，旧版位于 `claw.channels.weixinClawBot`，脚本两种都认，优先新版
 2. **Token**：调用 `/ilink/bot/getupdates` 从最近的消息中获取 `context_token`，缓存到本地
 3. **发送**：使用缓存的 token 向 `/ilink/bot/sendmessage` 发送消息
 4. **重试**：发送失败时自动刷新 token 并重试一次

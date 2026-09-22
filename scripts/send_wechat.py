@@ -8,7 +8,7 @@ Usage:
     send_wechat.py status                   # 查看当前 token 状态
 
 Configuration is read from WorkBuddy settings.json automatically.
-context_token is cached to ~/.workbuddy/skills/wechat-clawbot-notify/.token_cache.json
+context_token is cached to <SKILL_DIR>/.token_cache.json
 """
 
 import json
@@ -31,6 +31,15 @@ LOG_FILE = os.path.join(SKILL_DIR, "logs", "send_wechat.log")
 CHANNEL_VERSION = "workbuddy-desktop-1.0.0"
 
 def _workbuddy_settings_candidates():
+    # WorkBuddy itself resolves its config dir as WORKBUDDY_CONFIG_DIR (or the older
+    # CODEBUDDY_CONFIG_DIR), falling back to <home>/.workbuddy on every platform.
+    # On Windows <home> is %USERPROFILE%, e.g. C:\Users\<name>\.workbuddy\settings.json.
+    env_dir = (os.environ.get("WORKBUDDY_CONFIG_DIR") or os.environ.get("CODEBUDDY_CONFIG_DIR") or "").strip()
+    env_candidates = [os.path.join(env_dir, "settings.json")] if env_dir else []
+    return env_candidates + _workbuddy_default_settings_candidates()
+
+
+def _workbuddy_default_settings_candidates():
     if sys.platform == "darwin":
         return [
             os.path.expanduser("~/.workbuddy/settings.json"),
@@ -54,12 +63,35 @@ def _workbuddy_settings_candidates():
 
 
 def _extract_weixin_clawbot_config(settings):
+    """Locate the weixinClawBot channel config inside a WorkBuddy settings dict.
+
+    WorkBuddy has shipped three layouts:
+      1. settings["claw.channels"]["weixinClawBot"]                        (flat key, legacy app dir)
+      2. settings["claw"]["channels"]["weixinClawBot"]                     (nested, ~/.workbuddy)
+      3. settings["claw"]["users"][<uid>]["channels"]["weixinClawBot"]     (per-user, WorkBuddy >= 5.5)
+    Layout 3 wins when present. ``claw.legacyOwnerUid`` picks the user; otherwise
+    the first user with an enabled weixinClawBot channel is used.
+    """
+    claw = settings.get("claw")
+    if isinstance(claw, dict):
+        users = claw.get("users")
+        if isinstance(users, dict) and users:
+            owner = claw.get("legacyOwnerUid")
+            ordered = ([owner] if owner in users else []) + [u for u in users if u != owner]
+            for uid in ordered:
+                user = users.get(uid)
+                channels = user.get("channels") if isinstance(user, dict) else None
+                cfg = channels.get("weixinClawBot") if isinstance(channels, dict) else None
+                if isinstance(cfg, dict) and cfg.get("enabled"):
+                    return cfg
+
     channels = settings.get("claw.channels")
-    if not isinstance(channels, dict):
-        channels = settings.get("claw", {}).get("channels", {})
+    if not isinstance(channels, dict) and isinstance(claw, dict):
+        channels = claw.get("channels", {})
     if not isinstance(channels, dict):
         return {}
-    return channels.get("weixinClawBot", {})
+    cfg = channels.get("weixinClawBot", {})
+    return cfg if isinstance(cfg, dict) else {}
 
 
 WORKBUDDY_SETTINGS = _workbuddy_settings_candidates()[0]
@@ -369,26 +401,28 @@ def cmd_refresh(_args):
 def cmd_status(_args):
     """Handle 'status' command."""
     config = load_config()
-    token = None
-    updated_at = "N/A"
-    cache_account_id = "N/A"
-    if os.path.exists(CACHE_FILE):
-        cache = load_cache()
-        token = cache.get("context_token")
-        updated_at = cache.get("updated_at", "N/A")
-        cache_account_id = cache.get("account_id", "legacy")
+    cache = load_cache() if os.path.exists(CACHE_FILE) else {}
+    # load_cached_token() returns None when the cache belongs to a different bot,
+    # so Ready reflects whether a *usable* token exists, not just any token.
+    token = load_cached_token(config)
+    stale_token = bool(cache.get("context_token")) and not token
+    cache_account_id = cache.get("account_id", "legacy") if cache else "N/A"
+    updated_at = cache.get("updated_at", "N/A") if cache else "N/A"
 
     print(f"Settings:  {config.get('_settings_path', WORKBUDDY_SETTINGS)}")
     print(f"Bot ID:    {config.get('accountId', 'N/A')}")
     print(f"User ID:   {config['userId']}")
     print(f"Base URL:  {config['baseUrl']}")
+    print(f"Mode:      {config.get('connectionMode', 'N/A')}")
     print(f"Enabled:   {config.get('enabled', False)}")
     print(f"Ready:     {bool(token)}")
 
-    if os.path.exists(CACHE_FILE):
+    if cache:
         print(f"Cache Bot: {cache_account_id}")
         if token:
             print(f"Token:     {token[:32]}...")
+        elif stale_token:
+            print(f"Token:     Cached for a different bot ({cache_account_id}); run 'refresh'")
         else:
             print("Token:     Not cached (run 'refresh' first)")
         print(f"Updated:   {updated_at}")
